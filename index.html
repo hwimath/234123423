@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>고차방정식 기본</title>
+  <!-- MathJax 로드 (LaTeX 수식을 위해) -->
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" defer></script>
+  <style>
+    /* 흑백 테마 */
+    body {
+      background: #000;
+      color: #fff;
+      font-family: sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      padding: 1rem;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    h1, h2, h3 {
+      margin: 0.5rem 0;
+    }
+
+    /* 첫 화면(이름/난이도 입력) 숨기거나 보이기 위한 스타일 */
+    .hidden {
+      display: none;
+    }
+
+    /* 에너지바(시간 bar) */
+    .energy-bar-wrapper {
+      background: #fff;
+      width: 100%;
+      height: 10px;
+      margin: 0.5rem 0;
+      position: relative;
+    }
+    .energy-bar-fill {
+      background: #000;
+      height: 10px;
+      width: 100%; /* JS에서 동적으로 줄여나감 */
+      transition: width 0.2s linear;
+    }
+
+    /* 보기(4지선다) 영역 */
+    .choiceArea {
+      margin: 0.5rem 0 1rem 0;
+    }
+    .choiceItem {
+      margin: 0.2rem 0;
+      cursor: pointer;
+    }
+
+    /* 남은 기회/점수/총경과시간 표시 영역 */
+    .info-panel {
+      margin: 0.5rem 0;
+    }
+
+    /* 전송 결과 표시 */
+    #response {
+      white-space: pre-wrap;
+      background: #222;
+      color: #0f0;
+      padding: 0.5rem;
+      margin-top: 0.5rem;
+    }
+
+    /* 흑백 버튼 */
+    button {
+      background: #fff;
+      color: #000;
+      border: 1px solid #999;
+      padding: 0.3rem 0.5rem;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #ccc;
+    }
+
+    input[type="text"] {
+      border: 1px solid #999;
+      padding: 0.2rem;
+    }
+
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <h1>고차방정식 기본</h1>
+
+  <!-- 첫 화면: 이름, 난이도 선택 -->
+  <div id="startScreen">
+    <div>
+      <label>이름: <input type="text" id="playerNameInput" /></label>
+    </div>
+    <div style="margin-top:1rem;">
+      난이도 선택:
+      <select id="difficultySelect">
+        <option value="최상">최상 (20초, 문제당 20점)</option>
+        <option value="상">상 (30초, 문제당 15점)</option>
+        <option value="중">중 (40초, 문제당 13점)</option>
+        <option value="하">하 (시간무제한, 문제당 10점)</option>
+      </select>
+    </div>
+    <button onclick="startGame()">게임 시작</button>
+  </div>
+
+  <!-- 문제/게임 화면 -->
+  <div id="gameScreen" class="hidden">
+    <div class="info-panel">
+      <span id="livesInfo"></span> | 
+      <span id="scoreInfo"></span> | 
+      <span id="elapsedTimeInfo"></span>
+    </div>
+    <!-- 남은 시간(에너지바) -->
+    <div id="energyBar" class="energy-bar-wrapper">
+      <div id="energyFill" class="energy-bar-fill"></div>
+    </div>
+
+    <div id="questionArea"></div>
+    <div class="choiceArea" id="choiceArea"></div>
+
+    <button onclick="submitAnswer()">제출</button>
+  </div>
+
+  <!-- 게임오버 화면 -->
+  <div id="gameOverScreen" class="hidden">
+    <h2>게임 종료</h2>
+    <div id="finalScoreArea"></div>
+    <button onclick="sendScore()">점수 전송</button>
+    <div id="response"></div>
+  </div>
+
+</div>
+
+<script>
+/*
+  문제 데이터:
+  - cond: " \\( ... \\) " 형태 (조건)
+  - goal: " ... " (구하고자 하는 것)
+  - choices: [ " ... ", " ... ", " ... ", " ... " ]  (4지 선다, LaTeX 포함)
+  - answerIndex: 0~3 (정답)
+*/
+const problems = [
+
+  {
+    cond: "\\( x^3 - 1 = 0 \\)",
+    goal: "모든 복소해를 구하시오.",
+    choices: [
+      "\\(\\{1\\}\\)",
+      "\\(\\{1, -1\\}\\)",
+      "\\(\\left\\{1, -\\tfrac12 + \\tfrac{\\sqrt{3}}{2}i, -\\tfrac12 - \\tfrac{\\sqrt{3}}{2}i\\right\\}\\)",
+      "\\(\\{-1, 1\\}\\)"
+    ],
+    answerIndex: 2
+  },
+  {
+    cond: "\\( x^3 + 1 = 0 \\)",
+    goal: "모든 복소해를 구하시오.",
+    choices: [
+      "\\(\\{-1\\}\\)",
+      "\\(\\left\\{-1, \\tfrac12 + \\tfrac{\\sqrt{3}}{2}i, \\tfrac12 - \\tfrac{\\sqrt{3}}{2}i\\right\\}\\)",
+      "\\(\\{1, -1\\}\\)",
+      "\\(\\{0, -1\\}\\)"
+    ],
+    answerIndex: 1
+  },
+  {
+    cond: "\\( x^3 - 8 = 0 \\)",
+    goal: "모든 복소해를 구하시오.",
+    choices: [
+      "\\(\\{2\\}\\)",
+      "\\(\\{2, -1+\\sqrt{3}i, -1-\\sqrt{3}i\\}\\)",
+      "\\(\\{-2, 2\\}\\)",
+      "\\(\\{-2, 1\\pm\\sqrt{3}i\\}\\)"
+    ],
+    answerIndex: 1
+  },
+  {
+    cond: "\\( x^3 + 8 = 0 \\)",
+    goal: "모든 복소해를 구하시오.",
+    choices: [
+      "\\(\\{-2\\}\\)",
+      "\\(\\{-2, 1\\pm\\sqrt{3}i\\}\\)",
+      "\\(\\{-2, 1+\\sqrt{3}i, 1-\\sqrt{3}i\\}\\)",
+      "\\(\\{2, -1\\pm\\sqrt{3}i\\}\\)"
+    ],
+    answerIndex: 2
+  },
+  {
+    cond: "\\( x^3 + 27 = 0 \\)",
+    goal: "모든 복소해를 구하시오.",
+    choices: [
+      "\\(\\{-3\\}\\)",
+      "\\(\\{-3, \\tfrac{3}{2} - \\tfrac{3\\sqrt{3}}{2}i, \\tfrac{3}{2} + \\tfrac{3\\sqrt{3}}{2}i\\}\\)",
+      "\\(\\{-3, 3\\pm\\sqrt{3}i\\}\\)",
+      "\\(\\{0, -3\\}\\)"
+    ],
+    answerIndex: 1
+  },
+  {
+    cond: "\\( x^3 + 4x = 0 \\)",
+    goal: "모든 해(복소수 포함)를 구하시오.",
+    choices: [
+      "\\(\\{0\\}\\)",
+      "\\(\\{0, 2i\\}\\)",
+      "\\(\\{0, 2i, -2i\\}\\)",
+      "\\(\\{2i, -2i\\}\\)"
+    ],
+    answerIndex: 2
+  },
+  {
+    cond: "\\( x^3 - 9x = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\{0\\}\\)",
+      "\\(\\{3, -3\\}\\)",
+      "\\(\\{0, 3\\}\\)",
+      "\\(\\{0, 3, -3\\}\\)"
+    ],
+    answerIndex: 3
+  },
+  {
+    cond: "\\( x^3 - 216 = 0 \\)",
+    goal: "모든 복소해를 구하시오.",
+    choices: [
+      "\\(\\{6\\}\\)",
+      "\\(\\{6, -3+3\\sqrt{3}i, -3-3\\sqrt{3}i\\}\\)",
+      "\\(\\{-6, 3\\pm 3\\sqrt{3}i\\}\\)",
+      "\\(\\{0, 6\\}\\)"
+    ],
+    answerIndex: 1
+  },
+  {
+    cond: "\\( x^3 - 125 = 0 \\)",
+    goal: "모든 복소해를 구하시오.",
+    choices: [
+      "\\(\\{5\\}\\)",
+      "\\(\\{5, -\\tfrac{5}{2}+\\tfrac{5\\sqrt{3}}{2}i, -\\tfrac{5}{2}-\\tfrac{5\\sqrt{3}}{2}i\\}\\)",
+      "\\(\\{5, -5\\}\\)",
+      "\\(\\{5, 0\\}\\)"
+    ],
+    answerIndex: 1
+  },
+  {
+    cond: "\\( x^3 - x^2 = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\{0, 1\\}\\)",
+      "\\(\\{0\\}\\)",
+      "\\(\\{-1, 0\\}\\)",
+      "\\(\\{-1, 0, 1\\}\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( 8x^3 - 27 = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\{\\tfrac{3}{2}\\}\\)",
+      "\\(\\{\\tfrac{3}{2}, -\\tfrac{3}{4}+\\tfrac{3\\sqrt{3}}{4}i, -\\tfrac{3}{4}-\\tfrac{3\\sqrt{3}}{4}i\\}\\)",
+      "\\(\\{0, \\tfrac{3}{2}\\}\\)",
+      "\\(\\{-\\tfrac{3}{2}, \\tfrac{3}{2}\\}\\)"
+    ],
+    answerIndex: 1
+  },
+  {
+    cond: "\\( x^3 + x^2 - 2x = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\{0, 1, -2\\}\\)",
+      "\\(\\{0, 1, 2\\}\\)",
+      "\\(\\{0, -1, 2\\}\\)",
+      "\\(\\{0, 1\\}\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( x^3 + 4x^2 - x - 4 = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\{-4, -1, 1\\}\\)",
+      "\\(\\{-4, 1\\}\\)",
+      "\\(\\{-4\\}\\)",
+      "\\(\\{4, -1, 1\\}\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( x^4 - 1 = 0 \\)",
+    goal: "모든 복소해를 구하시오.",
+    choices: [
+      "\\(\\{\\pm 1\\}\\)",
+      "\\(\\{\\pm 1, \\pm i\\}\\)",
+      "\\(\\{1, i\\}\\)",
+      "\\(\\{1, -1\\}\\)"
+    ],
+    answerIndex: 1
+  },
+  {
+    cond: "\\( x^4 - 16 = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\{\\pm 2\\}\\)",
+      "\\(\\{\\pm 2, \\pm 4\\}\\)",
+      "\\(\\{\\pm 2, \\pm 2i\\}\\)",
+      "\\(\\{\\pm 4, \\pm 2i\\}\\)"
+    ],
+    answerIndex: 2
+  },
+  {
+    cond: "\\( x^4 - x^2 = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\{0, 1, -1\\}\\)",
+      "\\(\\{0, 1\\}\\)",
+      "\\(\\{\\pm 1\\}\\)",
+      "\\(\\{1, -1\\}\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( x^4 - 27x = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\{0, 3\\}\\)",
+      "\\(\\{0, 3, -3\\}\\)",
+      "\\(\\{0, 3, -\\tfrac{3}{2}+\\tfrac{3\\sqrt{3}}{2}i, -\\tfrac{3}{2}-\\tfrac{3\\sqrt{3}}{2}i\\}\\)",
+      "\\(\\{0, 3, 3i\\}\\)"
+    ],
+    answerIndex: 2
+  },
+  {
+    cond: "\\( 16x^4 - 1 = 0 \\)",
+    goal: "모든 복소해를 구하시오.",
+    choices: [
+      "\\(\\{\\pm \\tfrac14, \\pm \\tfrac{i}{4}\\}\\)",
+      "\\(\\{\\pm \\tfrac12, \\pm \\tfrac{i}{2}\\}\\)",
+      "\\(\\{\\pm 4, \\pm 4i\\}\\)",
+      "\\(\\{\\pm 2, \\pm 2i\\}\\)"
+    ],
+    answerIndex: 1
+  },
+  {
+    cond: "\\( x^4 + x^3 - 2x^2 = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\{0, -2, 1\\}\\)",
+      "\\(\\{0, 2, -1\\}\\)",
+      "\\(\\{1, 2\\}\\)",
+      "\\(\\{-2, 2\\}\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( x^4 - 13x^2 + 36 = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\{\\pm 3, \\pm 2\\}\\)",
+      "\\(\\{\\pm 4, \\pm 1\\}\\)",
+      "\\(\\{\\pm 3, \\pm 9\\}\\)",
+      "\\(\\{\\pm 2, \\pm 5\\}\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( x^3 - 2x^2 + 1 = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\left\\{1, \\tfrac{1+\\sqrt{5}}{2}, \\tfrac{1-\\sqrt{5}}{2}\\right\\}\\)",
+      "\\(\\{1, -1, 0\\}\\)",
+      "\\(\\{0, 1, 2\\}\\)",
+      "\\(\\{1\\}\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( x^3 - 2x^2 + 1 = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\left\\{1, \\tfrac{1+\\sqrt{5}}{2}, \\tfrac{1-\\sqrt{5}}{2}\\right\\}\\)",
+      "\\(\\{2, -1, 0\\}\\)",
+      "\\(\\{1, i, -i\\}\\)",
+      "\\(\\{-1, 2, 3\\}\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( x^3 - x^2 + x - 1 = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\{1, i, -i\\}\\)",
+      "\\(\\{1, -1, i\\}\\)",
+      "\\(\\{0, 1, i\\}\\)",
+      "\\(\\{\\pm i\\}\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( x^3 - 3x^2 + x + 5 = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(-1,\\; 2+i,\\; 2-i\\)",
+      "\\(-1,\\; -2+i,\\; -2-i\\)",
+      "\\(1,\\; 2+i,\\; 2-i\\)",
+      "\\(1,\\; -2+i,\\; -2-i\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( x^3 + 2x^2 - 5x + 2 = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\left\\{1, \\tfrac{-3+\\sqrt{17}}{2}, \\tfrac{-3-\\sqrt{17}}{2}\\right\\}\\)",
+      "\\(\\{1, -1, \\sqrt{17}\\}\\)",
+      "\\(-1, 1, 2\\)",
+      "\\(\\{1\\}\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( x^3 - x^2 - 10x - 8 = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\{4, -1, -2\\}\\)",
+      "\\(\\{4, 1, 2\\}\\)",
+      "\\(\\{1, -1\\}\\)",
+      "\\(\\{-4, 1, 2\\}\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( x^3 + 4x^2 + 6x + 4 = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\{-2, -1+i, -1-i\\}\\)",
+      "\\(\\{2, 1+i, 1-i\\}\\)",
+      "\\(\\{-2, 1\\pm i\\}\\)",
+      "\\(\\{-1, -2\\pm i\\}\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( x^3 + 2x^2 - x - 2 = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\{1, -1, -2\\}\\)",
+      "\\(\\{1, 2, -2\\}\\)",
+      "\\(\\{1, -1\\}\\)",
+      "\\(\\{-2\\}\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( 3x^3 - 4x^2 - 5x + 2 = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\left\\{2, \\tfrac13, -1\\right\\}\\)",
+      "\\(\\{2, 1, -1\\}\\)",
+      "\\(\\{2, \\tfrac13\\}\\)",
+      "\\(\\{-1, 1, 2\\}\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( x^3 - 3x^2 - 6x + 8 = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\{4, -2, 1\\}\\)",
+      "\\(\\{4, 2, 1\\}\\)",
+      "\\(\\{-2, -4, 1\\}\\)",
+      "\\(\\{-2, 1\\}\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( x^4 - 5x - 6 = 0 \\)",
+    goal: "모든 근을 구하시오.",
+    choices: [
+      "\\(\\{2, -1, \\tfrac{-1 + i\\sqrt{11}}{2}, \\tfrac{-1 - i\\sqrt{11}}{2}\\}\\)",
+      "\\(\\{2, 1, \\tfrac{-1\\pm i\\sqrt{11}}{2}\\}\\)",
+      "\\(\\{-2, 1, \\tfrac{1\\pm i\\sqrt{11}}{2}\\}\\)",
+      "\\(\\{-2, -1, \\tfrac{-1\\pm i\\sqrt{11}}{2}\\}\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( x^4 - 2x^2 - 3x - 2 = 0 \\)",
+    goal: "모든 근을 구하시오.",
+    choices: [
+      "\\(\\{2, -1, \\tfrac{-1 + i\\sqrt{3}}{2}, \\tfrac{-1 - i\\sqrt{3}}{2}\\}\\)",
+      "\\(\\{2, 1, \\tfrac{-1 \\pm i\\sqrt{3}}{2}\\}\\)",
+      "\\(\\{-2, 1, \\tfrac{1\\pm i\\sqrt{3}}{2}\\}\\)",
+      "\\(\\{-2, -1, \\tfrac{-1\\pm i\\sqrt{3}}{2}\\}\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( x^4 - 10x^3 + 35x^2 - 50x + 24 = 0 \\)",
+    goal: "모든 해를 구하시오.",
+    choices: [
+      "\\(\\{1, 2, 3, 4\\}\\)",
+      "\\(\\{1, 2, 4, 5\\}\\)",
+      "\\(\\{0, 1, 2, 3\\}\\)",
+      "\\(\\{2, 3, 4, 5\\}\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( x^4 - 2x^3 + 3x^2 + 2x - 4 = 0 \\)",
+    goal: "모든 근을 구하시오.",
+    choices: [
+      "\\(\\{1\\text{(중근)}, \\pm 2i\\}\\)",
+      "\\(\\{1, 2, \\pm 2i\\}\\)",
+      "\\(\\{1, 1, -4\\}\\)",
+      "\\(\\{\\pm 2i\\}\\)"
+    ],
+    answerIndex: 0
+  },
+  {
+    cond: "\\( x^4 - 2x^3 - 5x^2 + 2x + 4 = 0 \\)",
+    goal: "모든 근을 구하시오.",
+    choices: [
+      "\\(\\{1, -1, \\pm 2\\}\\)",
+      "\\(\\{1, 1, 2, -2\\}\\)",
+      "\\(\\{-1, \\pm 2\\}\\)",
+      "\\(\\{1, \\pm 2i\\}\\)"
+    ],
+    answerIndex: 0
+  }
+
+];
+
+/* 전역 변수들 */
+let playerName = "";
+let difficulty = "";
+let timeLimit = 0;       // 각 문제마다 주어지는 제한(초). 0이면 무제한.
+let scorePerQuestion = 0;
+let score = 0;
+let lives = 3;
+let currentProblemIndex = 0;
+let usedProblems = [];   // 현재 1회전에서 사용 중인 문제목록(섞은 결과)
+let questionStartTime = 0;  // 매 문제 시작 시각
+let energyInterval = null;  // 남은 시간/에너지바 setInterval
+let totalStartTime = 0;     // 전체 게임 시작 시각
+let totalTimerInterval = null; // 전체 경과시간 측정
+let totalElapsedTime = 0;      // ms 단위 누적
+let correctAnswerIndex = -1;   // 현재 문제 정답 인덱스
+
+/* 난이도별 설정 */
+function setDifficulty(diff) {
+  switch(diff) {
+    case "최상": timeLimit=20; scorePerQuestion=20; break;
+    case "상":   timeLimit=30; scorePerQuestion=15; break;
+    case "중":   timeLimit=40; scorePerQuestion=13; break;
+    case "하":   timeLimit=0;  scorePerQuestion=10; break;
+    default:     timeLimit=0;  scorePerQuestion=0;  break;
+  }
+}
+
+/* 시작 화면 -> 게임화면 전환 */
+function startGame() {
+  const nameInput = document.getElementById("playerNameInput");
+  const diffSelect = document.getElementById("difficultySelect");
+  playerName = nameInput.value.trim() || "게스트";
+  difficulty = diffSelect.value;
+  setDifficulty(difficulty);
+
+  // 전역 변수 초기화
+  score = 0;
+  lives = 3;
+  totalElapsedTime = 0;
+  document.getElementById("startScreen").classList.add("hidden");
+  document.getElementById("gameScreen").classList.remove("hidden");
+
+  // 전체 시간 타이머 시작
+  totalStartTime = Date.now();
+  totalTimerInterval = setInterval(()=>{
+    const now = Date.now();
+    totalElapsedTime = now - totalStartTime;
+    // 초단위 변환
+    const sec = Math.floor(totalElapsedTime/1000);
+    document.getElementById("elapsedTimeInfo").innerText = `총경과: ${sec}초`;
+  }, 1000);
+
+  // 문제 목록 섞기
+  shuffleArray(problems);
+  usedProblems = [...problems];  // 이번 1회전용
+  currentProblemIndex = 0;
+
+  showProblem();
+}
+
+/* 문제 표시하기 */
+function showProblem() {
+  if (currentProblemIndex >= usedProblems.length) {
+    // 모든 문제를 다 풀면 끝없는 랜덤 출제(새로 섞어서 다시..)
+    shuffleArray(problems);
+    usedProblems = [...problems];
+    currentProblemIndex = 0;
+  }
+  const p = usedProblems[currentProblemIndex];
+  // 보기들도 매번 섞기
+  const indices = [0,1,2,3];
+  shuffleArray(indices);
+  // 정답 인덱스를 찾아서 correctAnswerIndex에 반영
+  // p.answerIndex는 원본에서의 위치, indices에서의 위치가 바뀔 수 있음
+  // 예) 정답이 2였는데 indices = [1,2,0,3] 이라면, '2'가 '1'번째에 들어가면
+  // 최종 위치는 1 => 우리가 낼 때 그게 (B)가 된다.
+  let newChoices = [];
+  let newAnswerIndex = -1;
+  for(let i=0; i<4; i++){
+    newChoices[i] = p.choices[indices[i]];
+    if(indices[i] === p.answerIndex){
+      newAnswerIndex = i;
+    }
+  }
+  correctAnswerIndex = newAnswerIndex;
+
+  // 화면 구성
+  const questionArea = document.getElementById("questionArea");
+  const choiceArea = document.getElementById("choiceArea");
+  questionArea.innerHTML = `
+    <div><strong>조건:</strong> \\(${p.cond}\\)</div>
+    <div><strong>구하고자 하는 것:</strong> ${p.goal}</div>
+  `;
+  choiceArea.innerHTML = "";
+  for(let i=0; i<4; i++){
+    choiceArea.innerHTML += `
+      <div class="choiceItem">
+        <input type="radio" name="choice" id="choice_${i}" value="${i}" />
+        <label for="choice_${i}">${newChoices[i]}</label>
+      </div>
+    `;
+  }
+
+  // 남은 기회, 점수 갱신
+  document.getElementById("livesInfo").innerText = `남은 기회: ${lives}`;
+  document.getElementById("scoreInfo").innerText = `점수: ${score}`;
+
+  // 에너지바 설정
+  setupEnergyBar();
+
+  // 수식 렌더링
+  MathJax.typeset();
+}
+
+/* 에너지바(시간제한) 세팅 */
+function setupEnergyBar() {
+  // 혹시 이전 interval 있으면 제거
+  if(energyInterval) { clearInterval(energyInterval); }
+  const energyFill = document.getElementById("energyFill");
+
+  if(timeLimit === 0) {
+    // 하 난이도(무제한)
+    energyFill.style.width = "100%";
+    return;
+  }
+
+  let remain = timeLimit; //초
+  energyFill.style.width = "100%";
+
+  energyInterval = setInterval(()=>{
+    remain -= 0.2; // 0.2초마다 갱신
+    const ratio = Math.max(0, remain / timeLimit);
+    energyFill.style.width = (ratio*100)+"%";
+    if(remain<=0) {
+      clearInterval(energyInterval);
+      timeOutFail();
+    }
+  }, 200);
+}
+
+/* 시간초과시 처리 */
+function timeOutFail(){
+  // 기회 1 감소, 문제 넘어가기
+  lives--;
+  if(lives <= 0) {
+    endGame();
+    return;
+  }
+  alert("시간 초과! 기회를 1 잃습니다.");
+  currentProblemIndex++;
+  showProblem();
+}
+
+/* 정답 제출 */
+function submitAnswer() {
+  const radios = document.getElementsByName("choice");
+  let selected = -1;
+  for(let i=0; i<radios.length; i++){
+    if(radios[i].checked){
+      selected = parseInt(radios[i].value,10);
+      break;
+    }
+  }
+  if(selected<0) {
+    alert("보기를 선택해주세요.");
+    return;
+  }
+  // 정답 확인
+  if(selected === correctAnswerIndex) {
+    // 정답
+    score += scorePerQuestion;
+    alert("정답입니다! +" + scorePerQuestion + "점");
+  } else {
+    // 오답
+    lives--;
+    // 정답 보여주기
+    alert("오답입니다! 정답: " + String.fromCharCode(65+correctAnswerIndex));
+    if(lives<=0) {
+      endGame();
+      return;
+    }
+  }
+
+  currentProblemIndex++;
+  showProblem();
+}
+
+/* 게임 종료 처리 */
+function endGame() {
+  // 전체 타이머 중지
+  clearInterval(totalTimerInterval);
+  // 에너지바 중지
+  if(energyInterval) { clearInterval(energyInterval); }
+  document.getElementById("gameScreen").classList.add("hidden");
+  document.getElementById("gameOverScreen").classList.remove("hidden");
+
+  const finalScoreArea = document.getElementById("finalScoreArea");
+  const sec = Math.floor(totalElapsedTime/1000);
+  finalScoreArea.innerHTML = `
+    <div>최종 점수: ${score}</div>
+    <div>총 경과 시간: ${sec}초</div>
+  `;
+}
+
+/* 무작위 섞기 */
+function shuffleArray(arr) {
+  for(let i=arr.length-1; i>0; i--){
+    const r = Math.floor(Math.random()*(i+1));
+    [arr[i], arr[r]] = [arr[r], arr[i]];
+  }
+}
+
+/* 점수 전송 */
+function sendScore(){
+  // totalElapsedTime ms -> 초 단위로 전환
+  const sec = Math.floor(totalElapsedTime/1000);
+  saveData("고차방정식 기본", playerName, score, sec);
+}
+
+/* 주어진 코드: 서버로 데이터 전송 */
+async function saveData(game, name, score, elapsedTime) {
+  const FUNCTION_URL = "https://us-central1-record-f420d.cloudfunctions.net/report";
+  const requestData = {
+    game,
+    name,
+    score: parseInt(score, 10),
+    elapsedTime: parseInt(elapsedTime, 10)
+  };
+  try {
+    const response = await fetch(FUNCTION_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestData)
+    });
+    const responseData = await response.json();
+    if(response.ok) {
+      document.getElementById('response').innerText =
+        `성공: ${JSON.stringify(responseData, null, 2)}`;
+    } else {
+      document.getElementById('response').innerText =
+        `오류: ${JSON.stringify(responseData, null, 2)}`;
+    }
+  } catch (error) {
+    console.error('요청 실패:', error);
+    document.getElementById('response').innerText =
+      `네트워크 오류: ${error.message}`;
+  }
+}
+</script>
+</body>
+</html>
